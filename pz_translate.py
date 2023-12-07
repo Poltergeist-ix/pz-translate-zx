@@ -42,11 +42,9 @@ class Translator:
 
     def __init__(self, translate_dir: str = None, source: str = "EN", use_config: bool = True,
                  add_gitattributes: bool = True):
-        if translate_dir:
-            self.dir = translate_dir
-            self.path = pathlib.Path(self.dir)
+        self.path = pathlib.Path(translate_dir) if translate_dir else None
         self.languages: list[dict] = []
-        self.files: list
+        self.files: list[str]
         self.pause_on_gitattributes: bool = False
         if use_config:
             self.parse_config()
@@ -64,9 +62,8 @@ class Translator:
         config = ConfigParser()
         config.read(os.path.join(os.path.dirname(__file__),"config.ini"))
 
-        if not self.dir:
-            self.dir = config["Directories"][config["Translate"]["target"]]
-            self.path = pathlib.Path(self.dir)
+        if self.path is None:
+            self.path = pathlib.Path(config["Directories"][config["Translate"]["target"]])
         source = config["Translate"]["source"]
         source_path = self.path / source
 
@@ -107,7 +104,7 @@ class Translator:
         return final list of languages to translate
         """
         for lang in translate:
-            if os.path.isdir(os.path.join(self.dir,lang)):
+            if self.path.joinpath(lang).is_dir():
                 self.languages.append(PZ_LANGUAGES[lang])
             elif lang in create:
                 self.get_path(lang).mkdir()
