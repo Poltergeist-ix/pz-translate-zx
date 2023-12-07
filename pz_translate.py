@@ -58,7 +58,7 @@ class pz_translator_zx:
             languagesCreate = languagesTranslate
         self.translateLanguages = self.getLanguagesForTranslate(languagesTranslate,languagesCreate)
 
-    def getFilePath(self,langId: str, file: str = None):
+    def getFilePath(self,langId: str, file: str | None = None):
         if not file:
             return os.path.join(self.baseDir, langId)
         else:
@@ -179,7 +179,7 @@ class pz_translator_zx:
     def getTranslations(self,oTexts: dict, tLang: dict, file: str):
         trTexts = {"language":tLang["id"]}
         self.fillTranslationsFromFile(tLang,file,trTexts)
-        self.translate_batch(tLang,oTexts,trTexts)
+        self.translate_single(tLang,oTexts,trTexts)
         return trTexts
 
     def writeTranslation(self,lang: dict, file: str, text: str):
@@ -194,12 +194,13 @@ class pz_translator_zx:
     def translate_self(self):
         for file in self.files:
             templateText, oTexts = self.readSourceFile(file)
-            if not oTexts:
-                continue
             for lang in self.translateLanguages:
-                print("Begin Translation Check for: {file}, {id}, {lang} ".format(file=file,id=lang["id"],lang=lang["text"]))
-                self.translator.target = lang["tr_code"]
-                self.writeTranslation(lang,file,templateText.format_map(self.getTranslations(oTexts,lang,file)))
+                if oTexts:
+                    print("Begin Translation Check for: {file}, {id}, {lang} ".format(file=file,id=lang["id"],lang=lang["text"]))
+                    self.translator.target = lang["tr_code"]
+                    self.writeTranslation(lang,file,templateText.format_map(self.getTranslations(oTexts,lang,file)))
+                else:
+                    pathlib.Path(self.getFilePath(lang["id"],file)).unlink(missing_ok=True)
 
     def translate(self,languages:list|dict,files:list,languagesCreate:set[str]|None=set()):
         self.files = files
