@@ -8,6 +8,7 @@ Author: Poltergeist
 """
 
 import os
+import sys
 import pathlib
 from shutil import copyfile
 import json
@@ -39,10 +40,14 @@ class Translator:
     Translator for a mod's 'Translate' folder 
     """
 
-    def __init__(self, path: str = "", source: str = "EN", use_config: bool = True,
-                 add_gitattributes: bool = False):
-        self.dir = path
+    def __init__(self, translate_dir: str = None, source: str = "EN", use_config: bool = True,
+                 add_gitattributes: bool = True):
+        if translate_dir:
+            self.dir = translate_dir
+            self.path = pathlib.Path(self.dir)
         self.languages: list[dict] = []
+        self.files: list
+        self.pause_on_gitattributes: bool = False
         if use_config:
             self.parse_config()
         else:
@@ -61,8 +66,9 @@ class Translator:
 
         if not self.dir:
             self.dir = config["Directories"][config["Translate"]["target"]]
+            self.path = pathlib.Path(self.dir)
         source = config["Translate"]["source"]
-        source_path = pathlib.Path(self.dir,source)
+        source_path = self.path / source
 
         assert source_path.is_dir(), "Missing source directory: " + source_path.resolve()
 
@@ -86,25 +92,25 @@ class Translator:
             lang_create = lang_translate
         self.init_languages(lang_translate,lang_create)
 
-    def get_path(self, lang_id:str, file:str|None=None) -> str:
+        self.pause_on_gitattributes = config.getboolean("DEFAULT","pause_on_gitattributes",fallback=True)
+
+    def get_path(self, lang_id: str, file: str = None) -> pathlib.Path:
         """
         returns the language directory path, or the file path within
         """
         if file:
-            return os.path.join(self.dir, lang_id, file + "_" + lang_id + ".txt")
-        return os.path.join(self.dir, lang_id)
+            return self.path.joinpath(lang_id, file + "_" + lang_id + ".txt")
+        return self.path.joinpath(lang_id)
 
-    def init_languages(self,translate:list|dict,create:set|None):
+    def init_languages(self, translate: list | dict, create: set):
         """
         return final list of languages to translate
         """
-        if create is None:
-            create = set()
         for lang in translate:
             if os.path.isdir(os.path.join(self.dir,lang)):
                 self.languages.append(PZ_LANGUAGES[lang])
             elif lang in create:
-                pathlib.Path(self.get_path(lang)).mkdir()
+                self.get_path(lang).mkdir()
                 self.languages.append(PZ_LANGUAGES[lang])
 
     def parse_source(self, file: str):
@@ -154,7 +160,7 @@ class Translator:
         except FileNotFoundError:
             return None, None
 
-    def import_translations(self, lang: dict, tr_texts: dict, file_path: str):
+    def import_translations(self, lang: dict, tr_texts: dict, file_path: pathlib.Path):
         """
         parse translation file
         """
@@ -195,7 +201,7 @@ class Translator:
             if key not in trtexts:
                 trtexts[key] = vars_demod(self.translator.translate(vars_mod(value)))
 
-    def translate_batch(self, trlang, or_texts, tr_texts):
+    def translate_batch(self, trlang: dict, or_texts: dict, tr_texts: dict):
         """
         translate texts using translators 'batch translate' function
         """
@@ -215,13 +221,16 @@ class Translator:
         return dictionary with translation texts
         """
         tr_texts = {"language":tr_lang["id"]}
-        fpath = pathlib.Path(self.dir,tr_lang["id"],file)
+        fpath = self.get_path(tr_lang["id"],file)
         if fpath.is_file():
-            self.import_translations(tr_lang,tr_texts,fpath.resolve())
+            self.import_translations(tr_lang,tr_texts,fpath)
         self.translate_single(tr_lang,source_texts,tr_texts)
         return tr_texts
 
-    def writeTranslation(self,lang: dict, file: str, text: str):
+    def write_translation(self,lang: dict, file: str, text: str):
+        """
+        write the translation file
+        """
         try:
             with open(self.get_path(lang["id"],file),"w",encoding=lang["charset"],errors="replace") as f:
                 f.write(text)
@@ -230,7 +239,7 @@ class Translator:
             print(e)
             print(text)
 
-    def translate_self(self):
+    def translate_main(self):
         """
         translate class instance
         """
@@ -238,57 +247,66 @@ class Translator:
             template_text, source_texts = self.parse_source(file)
             for lang in self.languages:
                 if source_texts:
-                    print(f"Begin Translation Check for: {file}, {id}, {lang} ".format(file=file,id=lang["id"],lang=lang["text"]))
+                    print(f"Begin Translation Check for: {file}, {lang['id']}, {lang['text']}")
                     self.translator.target = lang["tr_code"]
-                    self.writeTranslation(lang,file,template_text.format_map(self.get_translations(source_texts,lang,file)))
+                    self.write_translation(lang,file,template_text.format_map(self.get_translations(source_texts,lang,file)))
                 else:
-                    pathlib.Path(self.get_path(lang["id"],file)).unlink(missing_ok=True)
+                    self.get_path(lang["id"],file).unlink(missing_ok=True)
         print(f"Translation Warnings: {self.warnings}")
 
-    def translate(self,languages:list|dict,files:list,languages_create:set[str]|None=None):
+    def translate(self, languages: list | dict, files: list, languages_create: set[str]):
+        """
+        translate without config file
+        """
         self.files = files
         self.init_languages(languages,languages_create)
-        self.translate_self()
+        self.translate_main()
 
     def reencode_translations(self, read: dict, languages: list = PZ_LANGUAGES, files: list = FILE_LIST):
         '''
         attempt to convert to appropriate encoding
         '''
-        for lang in languages:
-            lang = PZ_LANGUAGES[lang]
+        for k in languages:
+            lang = PZ_LANGUAGES[k]
             for file in files:
-                oFile = self.get_path(lang,file)
-                if os.path.isfile(oFile):
-                    f = open(oFile,"r", encoding=read[lang],errors="replace")
-                    text = f.read()
-                    f.close()
+                file_path = self.get_path(k,file)
+                if file_path.is_file():
+                    with open(file_path,"r", encoding=read[k],errors="replace") as f:
+                        text = f.read()
+                    with open(file_path,"w", encoding=lang["charset"],errors="replace") as f:
+                        f.write(text)
 
-                    f = open(oFile,"w", encoding=lang["charset"],errors="replace")
-                    f.write(text)
-                    f.close()
-
-    def reencode_self(self):
+    def reencode_initial(self):
         '''
         Rewrites existing files, assumes files were using correct encoding. 
 
         Use when first adding gitattributes file without translating files.
         '''
 
-        self.reencode_translations({ lang["id"] : lang["charset"] for lang in self.languages},[x["id"] for x in self.languages],self.files)
+        self.reencode_translations(
+            { lang["id"] : lang["charset"] for lang in self.languages},
+            [x["id"] for x in self.languages],
+            self.files
+        )
 
     def check_gitattributes(self):
         """
         add gitattributes file if it doesn't exist
         """
-        fpath = pathlib.Path(self.dir,".gitattributes")
+        fpath = self.path / ".gitattributes"
         if not fpath.is_file():
-            copyfile(os.path.join(os.path.dirname(__file__), ".gitattributes-template.txt"),fpath.resolve(),follow_symlinks=False)
+            copyfile(pathlib.Path(__file__).resolve().parent / ".gitattributes-template.txt",fpath.resolve(),follow_symlinks=False)
+            if self.pause_on_gitattributes:
+                self.reencode_initial()
+                input("Added .gitattributes file. Press Enter to continue.\n")
 
     def warn(self, message: str):
+        """simple warn message"""
         self.warnings += 1
         print(" - " + message)
 
 def translate_project(project_dir,args):
+    "translate project"
     with open(os.path.join(project_dir,"project.json"),"r",encoding="utf-8") as f:
         project = json.load(f)
     for mod_id in project["mods"]:
@@ -299,29 +317,32 @@ def translate_project(project_dir,args):
             print("Invalid translation dir:",modpath.resolve())
             continue
         o = Translator(modpath.resolve(),add_gitattributes=True)
-        o.translate_self()
+        o.translate_main()
 
 def translate_mod(mod_dir,args):
-    modpath = pathlib.Path(mod_dir,"media","lua","shared","Translate")
-    if modpath.is_dir():
-        o = Translator(modpath.resolve(),add_gitattributes=True)
-        o.translate_self()
+    "translate mod"
+    translate_path = pathlib.Path(mod_dir,"media","lua","shared","Translate")
+    if translate_path.is_dir():
+        o = Translator(translate_path.resolve(),add_gitattributes=True)
+        o.translate_main()
     else:
-        print("Invalid translation dir:",modpath.resolve())
+        print("Invalid translation dir:",translate_path.resolve())
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) == 1:
-        print("* Translating from config file *")
-        Translator(add_gitattributes=True).translate_self()
-    elif not os.path.isdir(sys.argv[1]):
-        print("Directory does not exist:",sys.argv[1])
-    elif os.path.isfile(os.path.join(sys.argv[1],"project.json")):
-        print("* Translating project *")
-        translate_project(sys.argv[1],sys.argv[2:])
-    elif os.path.isfile(os.path.join(sys.argv[1],"mod.info")):
-        print("* Translating mod *")
-        translate_mod(sys.argv[1],sys.argv[2:])
-    else:
-        print("* Translating directory *")
-        Translator(path=sys.argv[1],add_gitattributes=True).translate_self()
+    try:
+        if len(sys.argv) == 1:
+            print("* Translating from config file *")
+            Translator().translate_main()
+        elif not os.path.isdir(sys.argv[1]):
+            print("Directory does not exist:",sys.argv[1])
+        elif os.path.isfile(os.path.join(sys.argv[1],"project.json")):
+            print("* Translating project *")
+            translate_project(sys.argv[1],sys.argv[2:])
+        elif os.path.isfile(os.path.join(sys.argv[1],"mod.info")):
+            print("* Translating mod *")
+            translate_mod(sys.argv[1],sys.argv[2:])
+        else:
+            print("* Translating directory *")
+            Translator(translate_dir=sys.argv[1]).translate_main()
+    except KeyboardInterrupt:
+        print("Process manually terminated")
