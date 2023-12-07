@@ -1,89 +1,125 @@
+
+"""
+
+Script to process and fill mod translations for Project Zomboid
+
+Author: Poltergeist
+
+"""
+
 import os
 import pathlib
 from shutil import copyfile
 import json
+from configparser import ConfigParser
 from deep_translator import GoogleTranslator
 from pz_languages_info import getLanguages
 
-LanguagesDict = getLanguages(False)
+PZ_LANGUAGES = getLanguages()
 
-FileList = [ "Challenge", "ContextMenu", "DynamicRadio", "EvolvedRecipeName", "Farming", "GameSound", 
-            "IG_UI", "ItemName", "Items", "MakeUp", "Moodles", "Moveables", "MultiStageBuild", "Recipes", 
-            "Recorded_Media", "Sandbox", "Stash", "SurvivalGuide", "Tooltip", "UI"]
+FILE_LIST = [
+    "Challenge", "ContextMenu", "DynamicRadio", "EvolvedRecipeName", "Farming", "GameSound", 
+    "IG_UI", "ItemName", "Items", "MakeUp", "Moodles", "Moveables", "MultiStageBuild", "Recipes", 
+    "Recorded_Media", "Sandbox", "Stash", "SurvivalGuide", "Tooltip", "UI"
+]
 
-def varsMod(text:str):
+def vars_mod(text:str):
+    """
+    modulate special tags from changing during translation, lazy way.
+    Translations require human inspection
+    """
     return text.replace("<","<{").replace(">","}>").replace("%1","{%1}")
 
-def varsDemod(text:str):
+def vars_demod(text:str):
+    "demod special tags"
     return text.replace("{%1}","%1").replace("<{","<").replace("}>",">")
 
-class pz_translator_zx:
-    
-    def __init__(self,baseDir:str="",source:str="EN",hasConfig:bool=True,gitAtr:bool=False):
-        self.baseDir = baseDir
-        if hasConfig:
-            self.fromConfig(os.path.join(os.path.dirname(__file__),"config.ini"))
-        else:
-            self.sourceLang = LanguagesDict[source]
-        self.translator = GoogleTranslator(self.sourceLang["tr_code"])
-        if gitAtr:
-            self.checkGitAtributesFile()
+class Translator:
+    """
+    Translator for a mod's 'Translate' folder 
+    """
 
-    def fromConfig(self,file):
-        from configparser import ConfigParser
+    def __init__(self, path: str = "", source: str = "EN", use_config: bool = True,
+                 add_gitattributes: bool = False):
+        self.dir = path
+        self.languages: list[dict] = []
+        if use_config:
+            self.parse_config()
+        else:
+            self.source_lang = PZ_LANGUAGES[source]
+        if add_gitattributes:
+            self.check_gitattributes()
+        self.warnings = 0
+        self.translator = GoogleTranslator(self.source_lang["tr_code"])
+
+    def parse_config(self):
+        """
+        Read the config
+        """
         config = ConfigParser()
-        config.read(file)
+        config.read(os.path.join(os.path.dirname(__file__),"config.ini"))
+
+        if not self.dir:
+            self.dir = config["Directories"][config["Translate"]["target"]]
         source = config["Translate"]["source"]
+        source_path = pathlib.Path(self.dir,source)
 
-        assert os.path.isdir(os.path.join(self.baseDir,source)), "Missing source directory, wrong path?\nDir: " + os.path.join(self.baseDir,source)
+        assert source_path.is_dir(), "Missing source directory: " + source_path.resolve()
 
-        self.baseDir = self.baseDir if self.baseDir else config["Directories"][config["Translate"]["target"]]
-        self.sourceLang = LanguagesDict[source]
+        self.source_lang = PZ_LANGUAGES[source]
         if "files" in config["Translate"]:
-            self.files = [x for x in [x.strip() for x in config["Translate"]["files"].split(",")] if x in FileList]
+            self.files = [x for x in [x.strip() for x in config["Translate"]["files"].split(",")] if x in FILE_LIST]
         else:
-            self.files = FileList
+            self.files = FILE_LIST
         if "languagesExclude" in config["Translate"]:
-            languagesExclude = {x for x in [x.strip() for x in config["Translate"]["languagesExclude"].split(",")] if x in LanguagesDict}
+            lang_exclude = {x for x in [x.strip() for x in config["Translate"]["languagesExclude"].split(",")] if x in PZ_LANGUAGES}
         else:
-            languagesExclude = set()
-        languagesExclude.add(source)
+            lang_exclude = set()
+        lang_exclude.add(source)
         if "languagesTranslate" in config["Translate"]:
-            languagesTranslate = [x for x in [x.strip() for x in config["Translate"]["languagesTranslate"].split(",")] if x not in languagesExclude and x in LanguagesDict]
+            lang_translate = [x for x in [x.strip() for x in config["Translate"]["languagesTranslate"].split(",")] if x not in lang_exclude and x in PZ_LANGUAGES]
         else:
-            languagesTranslate = [x for x in LanguagesDict if x not in languagesExclude]
+            lang_translate = [x for x in PZ_LANGUAGES if x not in lang_exclude]
         if "languagesCreate" in config["Translate"]:
-            languagesCreate = {x for x in [x.strip() for x in config["Translate"]["languagesCreate"].split(",")] if x in languagesTranslate}
+            lang_create = {x for x in [x.strip() for x in config["Translate"]["languagesCreate"].split(",")] if x in lang_translate}
         else:
-            languagesCreate = languagesTranslate
-        self.translateLanguages = self.getLanguagesForTranslate(languagesTranslate,languagesCreate)
+            lang_create = lang_translate
+        self.init_languages(lang_translate,lang_create)
 
-    def getFilePath(self,langId: str, file: str | None = None):
-        if not file:
-            return os.path.join(self.baseDir, langId)
-        else:
-            return os.path.join(self.baseDir, langId, file + "_" + langId + ".txt")
-        
-    def getLanguagesForTranslate(self,translate:list|dict,create:set):
-        translateLanguages = []
-        for id in translate:
-            if os.path.isdir(os.path.join(self.baseDir,id)):
-                translateLanguages.append(LanguagesDict[id])
-            elif id in create:
-                pathlib.Path(self.getFilePath(id)).mkdir()
-                translateLanguages.append(LanguagesDict[id])
-        return translateLanguages
+    def get_path(self, lang_id:str, file:str|None=None) -> str:
+        """
+        returns the language directory path, or the file path within
+        """
+        if file:
+            return os.path.join(self.dir, lang_id, file + "_" + lang_id + ".txt")
+        return os.path.join(self.dir, lang_id)
 
-    def readSourceFile(self,file:str):
+    def init_languages(self,translate:list|dict,create:set|None):
+        """
+        return final list of languages to translate
+        """
+        if create is None:
+            create = set()
+        for lang in translate:
+            if os.path.isdir(os.path.join(self.dir,lang)):
+                self.languages.append(PZ_LANGUAGES[lang])
+            elif lang in create:
+                pathlib.Path(self.get_path(lang)).mkdir()
+                self.languages.append(PZ_LANGUAGES[lang])
+
+    def parse_source(self, file: str):
+        """
+        parse the source file
+        """
         try:
-            with open(self.getFilePath(self.sourceLang["id"],file),'r',encoding=self.sourceLang["charset"]) as f:
+            with open(self.get_path(self.source_lang["id"],file),'r',encoding=self.source_lang["charset"]) as f:
                 lines = []
-                tDict = {}
-                validLine = False
+                tdict = {}
+                is_valid = False
                 key = ""
                 text = ""
-                
-                lines += f.readline().replace("{","{{").replace(self.sourceLang["id"],"{language}")
+
+                lines += f.readline().replace("{","{{").replace(self.source_lang["id"],"{language}")
 
                 for line in f:
                     line = line.replace("{","{{")
@@ -92,99 +128,102 @@ class pz_translator_zx:
                         index1 = line.index("=")
                         index2 = line.index("\"",index1+1)
                         index3 = line.rindex("\"")
-                        key = line[:index1].strip().replace(".","-")
-                        text = line[index2+1:index3]
-                        lines += line[:index2+1], "{", key, "}", line[index3:]
-                        tDict[key] = text
-                        validLine = True
-                    elif "--" in line or not line.strip() or line.strip().endswith("..") and not validLine:
-                        validLine = False
+                        if index2 == index3:
+                            self.warn("Missing one \" for: " + line)
+                            is_valid = False
+                            lines += line
+                        else:
+                            is_valid = True
+                            key = line[:index1].strip().replace(".","-")
+                            text = line[index2+1:index3]
+                            lines += line[:index2+1], "{", key, "}", line[index3:]
+                            tdict[key] = text
+                    elif "--" in line or not line.strip() or line.strip().endswith("..") and not is_valid:
+                        is_valid = False
                         lines += line
                     else:
-                        validLine = True
+                        is_valid = True
                         lines += line
 
-                    if not validLine or not line.strip().endswith(".."):
-                        validLine = False
+                    if not is_valid or not line.strip().endswith(".."):
+                        is_valid = False
                         key = ""
                         text = ""
 
-                return "".join(lines), tDict
+                return "".join(lines), tdict
         except FileNotFoundError:
             return None, None
 
-    def fillTranslationsFromFile(self,lang:dict,file:str,trTexts:dict):
-        try:
-            with open(self.getFilePath(lang["id"],file),'r',encoding=lang["charset"],errors="replace") as f:
-                validLine = False
-                key = ""
-                text = ""
-                
-                f.readline()
+    def import_translations(self, lang: dict, tr_texts: dict, file_path: str):
+        """
+        parse translation file
+        """
+        with open(file_path,'r',encoding=lang["charset"],errors="replace") as f:
+            is_valid = False
+            key = ""
+            text = ""
 
-                for line in f:
-                    if "=" in line and "\"" in line:
-                        index1 = line.index("=")
-                        index2 = line.index("\"",index1+1)
-                        index3 = line.rindex("\"")
-                        key = line[:index1].strip().replace(".","-")
-                        text = line[index2+1:index3]
-                        trTexts[key] = text
-                        validLine = True
-                    elif "--" in line or not line.strip() or line.strip().endswith("..") and not validLine:
-                        validLine = False
-                    else:
-                        validLine = True
+            f.readline()
 
-                    if not validLine or not line.strip().endswith(".."):
-                        validLine = False
-                        key = ""
-                        text = ""
-        except:
-            pass
-    
-    def translate_single(self,tLang,oTexts: dict, tTexts:dict):
-        untranslated = len(oTexts) + 1 - len(tTexts)
+            for line in f:
+                if "=" in line and "\"" in line:
+                    index1 = line.index("=")
+                    index2 = line.index("\"",index1+1)
+                    index3 = line.rindex("\"")
+                    key = line[:index1].strip().replace(".","-")
+                    text = line[index2+1:index3]
+                    tr_texts[key] = text
+                    is_valid = True
+                elif "--" in line or not line.strip() or line.strip().endswith("..") and not is_valid:
+                    is_valid = False
+                else:
+                    is_valid = True
+
+                if not is_valid or not line.strip().endswith(".."):
+                    is_valid = False
+                    key = ""
+                    text = ""
+
+    def translate_single(self, tlang: dict, otexts: dict, trtexts: dict):
+        """
+        translate texts using translators 'translate' function
+        """
+        untranslated = len(otexts) + 1 - len(trtexts)
         if untranslated > 0:
             print(" - Untranslated texts size: ",untranslated)
-        for key, value in oTexts.items():
-            if key not in tTexts:
-                try:
-                    tTexts[key] = varsDemod(self.translator.translate(varsMod(value)))
-                except:
-                    print(" - Failed to translate: " + tTexts["language"] + " | " + value)
-                    tTexts[key] = "tr?: " + value
+        for key, value in otexts.items():
+            if key not in trtexts:
+                trtexts[key] = vars_demod(self.translator.translate(vars_mod(value)))
 
-    def translate_batch(self,tLang,oTexts,tTexts):
+    def translate_batch(self, trlang, or_texts, tr_texts):
+        """
+        translate texts using translators 'batch translate' function
+        """
         keys, values = [],[]
-        for key in oTexts:
-            if key not in tTexts:
+        for key in or_texts:
+            if key not in tr_texts:
                 keys.append(key)
-                values.append(varsMod(oTexts[key]))
-        if keys:
-            try:
-                print(" - Untranslated texts size: ",len(values))
-                translations = self.translator.translate_batch(values)
-                for i,key in enumerate(keys):
-                    tTexts[key] = varsDemod(translations[i])
-                    try:
-                        tTexts[key].encode(tLang["charset"])
-                    except:
-                        print(" - can not encode: ",key,tTexts[key])
-            except:
-                for i,k in enumerate(keys):
-                    print(" - Failed to translate: " + tTexts["language"] + " | " + values[i])
-                    tTexts[k] = "tr?: " + values[i]
+                values.append(vars_mod(or_texts[key]))
+        if values:
+            print(" - Untranslated texts size: ",len(values))
+            translations = self.translator.translate_batch(values)
+            for i,key in enumerate(keys):
+                tr_texts[key] = vars_demod(translations[i])
 
-    def getTranslations(self,oTexts: dict, tLang: dict, file: str):
-        trTexts = {"language":tLang["id"]}
-        self.fillTranslationsFromFile(tLang,file,trTexts)
-        self.translate_single(tLang,oTexts,trTexts)
-        return trTexts
+    def get_translations(self, source_texts: dict, tr_lang: dict, file: str) -> dict:
+        """
+        return dictionary with translation texts
+        """
+        tr_texts = {"language":tr_lang["id"]}
+        fpath = pathlib.Path(self.dir,tr_lang["id"],file)
+        if fpath.is_file():
+            self.import_translations(tr_lang,tr_texts,fpath.resolve())
+        self.translate_single(tr_lang,source_texts,tr_texts)
+        return tr_texts
 
     def writeTranslation(self,lang: dict, file: str, text: str):
         try:
-            with open(self.getFilePath(lang["id"],file),"w",encoding=lang["charset"],errors="replace") as f:
+            with open(self.get_path(lang["id"],file),"w",encoding=lang["charset"],errors="replace") as f:
                 f.write(text)
         except Exception as e:
             print("Failed to write " + lang["id"] + " " + file)
@@ -192,31 +231,35 @@ class pz_translator_zx:
             print(text)
 
     def translate_self(self):
+        """
+        translate class instance
+        """
         for file in self.files:
-            templateText, oTexts = self.readSourceFile(file)
-            for lang in self.translateLanguages:
-                if oTexts:
-                    print("Begin Translation Check for: {file}, {id}, {lang} ".format(file=file,id=lang["id"],lang=lang["text"]))
+            template_text, source_texts = self.parse_source(file)
+            for lang in self.languages:
+                if source_texts:
+                    print(f"Begin Translation Check for: {file}, {id}, {lang} ".format(file=file,id=lang["id"],lang=lang["text"]))
                     self.translator.target = lang["tr_code"]
-                    self.writeTranslation(lang,file,templateText.format_map(self.getTranslations(oTexts,lang,file)))
+                    self.writeTranslation(lang,file,template_text.format_map(self.get_translations(source_texts,lang,file)))
                 else:
-                    pathlib.Path(self.getFilePath(lang["id"],file)).unlink(missing_ok=True)
+                    pathlib.Path(self.get_path(lang["id"],file)).unlink(missing_ok=True)
+        print(f"Translation Warnings: {self.warnings}")
 
-    def translate(self,languages:list|dict,files:list,languagesCreate:set[str]|None=set()):
+    def translate(self,languages:list|dict,files:list,languages_create:set[str]|None=None):
         self.files = files
-        self.translateLanguages = self.getLanguagesForTranslate(languages,languagesCreate)
+        self.init_languages(languages,languages_create)
         self.translate_self()
 
-    def convertTranslations(self,readEncodes:dict,languages:list=LanguagesDict,files:list=FileList):
+    def reencode_translations(self, read: dict, languages: list = PZ_LANGUAGES, files: list = FILE_LIST):
         '''
         attempt to convert to appropriate encoding
         '''
-        for id in languages:
-            lang = LanguagesDict[id]
+        for lang in languages:
+            lang = PZ_LANGUAGES[lang]
             for file in files:
-                oFile = self.getFilePath(id,file)
+                oFile = self.get_path(lang,file)
                 if os.path.isfile(oFile):
-                    f = open(oFile,"r", encoding=readEncodes[id],errors="replace")
+                    f = open(oFile,"r", encoding=read[lang],errors="replace")
                     text = f.read()
                     f.close()
 
@@ -231,30 +274,37 @@ class pz_translator_zx:
         Use when first adding gitattributes file without translating files.
         '''
 
-        self.convertTranslations({ lang["id"] : lang["charset"] for lang in self.translateLanguages},[x["id"] for x in self.translateLanguages],self.files)
+        self.reencode_translations({ lang["id"] : lang["charset"] for lang in self.languages},[x["id"] for x in self.languages],self.files)
 
-    def checkGitAtributesFile(self):
-        fPath = os.path.join(self.baseDir,".gitattributes")
-        if not os.path.exists(fPath):
-            copyfile(os.path.join(os.path.dirname(__file__), ".gitattributes-template.txt"),fPath,follow_symlinks=False)
+    def check_gitattributes(self):
+        """
+        add gitattributes file if it doesn't exist
+        """
+        fpath = pathlib.Path(self.dir,".gitattributes")
+        if not fpath.is_file():
+            copyfile(os.path.join(os.path.dirname(__file__), ".gitattributes-template.txt"),fpath.resolve(),follow_symlinks=False)
 
-def translate_project(dir,args):
-    with open(os.path.join(dir,"project.json"),"r",encoding="utf-8") as f:
+    def warn(self, message: str):
+        self.warnings += 1
+        print(" - " + message)
+
+def translate_project(project_dir,args):
+    with open(os.path.join(project_dir,"project.json"),"r",encoding="utf-8") as f:
         project = json.load(f)
-    for id in project["mods"]:
-        if id in project["workshop"]["excludes"]:
+    for mod_id in project["mods"]:
+        if mod_id in project["workshop"]["excludes"]:
             continue
-        modpath = pathlib.Path(dir,id,"media","lua","shared","Translate")
+        modpath = pathlib.Path(project_dir,mod_id,"media","lua","shared","Translate")
         if not modpath.is_dir():
             print("Invalid translation dir:",modpath.resolve())
             continue
-        o = pz_translator_zx(modpath.resolve(),gitAtr=True)
+        o = Translator(modpath.resolve(),add_gitattributes=True)
         o.translate_self()
 
-def translate_mod(dir,args):
-    modpath = pathlib.Path(dir,"media","lua","shared","Translate")
+def translate_mod(mod_dir,args):
+    modpath = pathlib.Path(mod_dir,"media","lua","shared","Translate")
     if modpath.is_dir():
-        o = pz_translator_zx(modpath.resolve(),gitAtr=True)
+        o = Translator(modpath.resolve(),add_gitattributes=True)
         o.translate_self()
     else:
         print("Invalid translation dir:",modpath.resolve())
@@ -263,7 +313,7 @@ if __name__ == '__main__':
     import sys
     if len(sys.argv) == 1:
         print("* Translating from config file *")
-        pz_translator_zx(gitAtr=True).translate_self()
+        Translator(add_gitattributes=True).translate_self()
     elif not os.path.isdir(sys.argv[1]):
         print("Directory does not exist:",sys.argv[1])
     elif os.path.isfile(os.path.join(sys.argv[1],"project.json")):
@@ -274,4 +324,4 @@ if __name__ == '__main__':
         translate_mod(sys.argv[1],sys.argv[2:])
     else:
         print("* Translating directory *")
-        pz_translator_zx(baseDir=sys.argv[1],gitAtr=True).translate_self()
+        Translator(path=sys.argv[1],add_gitattributes=True).translate_self()

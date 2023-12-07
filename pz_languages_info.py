@@ -1,3 +1,7 @@
+"""
+Generate language information for translations
+"""
+
 import os
 import json
 
@@ -41,9 +45,6 @@ def getTranslateCodes(name):
     if name == "google":
         from deep_translator import GoogleTranslator
         return GoogleTranslator().get_supported_languages(True)
-    elif name == "googletrans":
-        from googletrans.constants import LANGCODES
-        return LANGCODES
 
 # uses scriptblock - need improvement
 def readLanguageFile(filePath: str):
@@ -86,7 +87,7 @@ def generateLanguagesInfo():
                 # print("| " + each.name + " | " + d["text"] + " | " + d["charset"] + " |")
     return all
 
-def getLanguages(generate: bool = False):
+def getLanguages(generate: bool = False) -> dict[str, dict]:
     LanguagesPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LanguagesInfo.json")
     if generate or not os.path.isfile(LanguagesPath):
         d = generateLanguagesInfo()
