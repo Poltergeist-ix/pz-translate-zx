@@ -13,9 +13,9 @@ from shutil import copyfile
 import json
 from configparser import ConfigParser
 from deep_translator import GoogleTranslator
-from pz_languages_info import getLanguages
+from pz_languages_info import get_languages_info
 
-PZ_LANGUAGES = getLanguages()
+PZ_LANGUAGES = get_languages_info()
 
 FILE_LIST = [
     "Challenge", "ContextMenu", "DynamicRadio", "EvolvedRecipeName", "Farming", "GameSound", 
@@ -133,7 +133,7 @@ class Translator:
 
             line = f.readline()
             if create_template:
-                template += line.replace("{","{{").replace(self.source_lang["id"],"{language}")
+                template += line.replace("{","{{").replace(self.source_lang["name"],"{language}")
 
             for line in f:
                 line = line.replace("{","{{")
@@ -143,7 +143,7 @@ class Translator:
                     index2 = line.index("\"",index1+1)
                     index3 = line.rindex("\"")
                     if index2 == index3:
-                        self.warn("Missing one \" for: " + line)
+                        self.warn("Missing one \" quotation mark for: " + line)
                         is_valid = False
                         if create_template:
                             template += line
@@ -205,12 +205,12 @@ class Translator:
         return dictionary with translation texts
         """
 
-        tr_map = {"language":tr_lang["id"]}
-        fpath = self.get_path(tr_lang["id"],file)
+        tr_map = {"language":tr_lang["name"]}
+        fpath = self.get_path(tr_lang["name"],file)
         if fpath.is_file():
             self.parse_translation_file(tr_lang,tr_map,fpath)
         # if there is an import source then parse them on top of current translations
-        fpath = self.get_import_path(tr_lang["id"],file)
+        fpath = self.get_import_path(tr_lang["name"],file)
         if fpath and fpath.is_file():
             self.parse_translation_file(tr_lang,tr_map,fpath)
         self.translate_single(tr_lang,source_texts,tr_map)
@@ -222,19 +222,17 @@ class Translator:
         write the translation file
         """
         try:
-            with open(self.get_path(lang["id"],file),"w",encoding=lang["charset"],errors="replace") as f:
+            with open(self.get_path(lang["name"],file),"w",encoding=lang["charset"],errors="replace") as f:
                 f.write(text)
         except Exception as e:
-            print("Failed to write " + lang["id"] + " " + file)
-            print(e)
-            print(text)
+            self.warn(f"Failed to write {lang['name']} {file}\nTxception: {e}\nText:\n{text}")
 
     def translate_main(self):
         """
         translate class instance
         """
         for file in self.files:
-            source_file_path = self.get_path(self.source_lang["id"],file)
+            source_file_path = self.get_path(self.source_lang["name"],file)
             if source_file_path.is_file():
                 source_map = {}
                 template_text = self.parse_translation_file(self.source_lang,source_map,source_file_path,True)
@@ -242,10 +240,10 @@ class Translator:
                 source_map = None
             for lang in self.languages:
                 if source_map:
-                    print(f"Begin Translation Check for: {file}, {lang['id']}, {lang['text']}")
+                    print(f"Begin Translation Check for: {file}, {lang['name']}, {lang['text']}")
                     self.write_translation(lang,file,template_text.format_map(self.get_translations(source_map,lang,file)))
                 else:
-                    self.get_path(lang["id"],file).unlink(missing_ok=True)
+                    self.get_path(lang["name"],file).unlink(missing_ok=True)
         print(f"Translation warnings total: {self.warnings}")
 
     def translate(self, languages: list | dict, files: list, languages_create: set[str]):
@@ -278,8 +276,8 @@ class Translator:
         '''
 
         self.reencode_translations(
-            { lang["id"] : lang["charset"] for lang in self.languages},
-            [x["id"] for x in self.languages],
+            { lang["name"] : lang["charset"] for lang in self.languages},
+            [x["name"] for x in self.languages],
             self.files
         )
 
@@ -297,7 +295,7 @@ class Translator:
     def warn(self, message: str):
         """print warn message"""
         self.warnings += 1
-        print(" - " + message)
+        print(f" - Warning!\n{message}\n")
 
 def translate_project(project_path):
     """

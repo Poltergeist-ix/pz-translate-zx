@@ -1,192 +1,165 @@
 {
   "AR": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "AR",
     "text": "Espanol (AR)",
+    "charset": "Cp1252",
+    "name": "AR",
     "tr_code": "es"
   },
   "CA": {
-    "VERSION": "1",
-    "charset": "ISO-8859-15",
-    "id": "CA",
     "text": "Catalan",
+    "charset": "ISO-8859-15",
+    "name": "CA",
     "tr_code": "ca"
   },
   "CH": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "CH",
     "text": "Traditional Chinese",
+    "charset": "UTF-8",
+    "name": "CH",
     "tr_code": "zh-TW"
   },
   "CN": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "CN",
     "text": "Simplified Chinese",
+    "charset": "UTF-8",
+    "name": "CN",
     "tr_code": "zh-CN"
   },
   "CS": {
-    "VERSION": "1",
-    "charset": "Cp1250",
-    "id": "CS",
     "text": "Czech",
+    "charset": "Cp1250",
+    "name": "CS",
     "tr_code": "cs"
   },
   "DA": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "DA",
     "text": "Danish",
+    "charset": "Cp1252",
+    "name": "DA",
     "tr_code": "da"
   },
   "DE": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "DE",
     "text": "Deutsch",
+    "charset": "Cp1252",
+    "name": "DE",
     "tr_code": "de"
   },
   "EN": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "EN",
     "text": "English",
+    "charset": "UTF-8",
+    "name": "EN",
     "tr_code": "en"
   },
   "ES": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "ES",
     "text": "Espanol (ES)",
+    "charset": "Cp1252",
+    "name": "ES",
     "tr_code": "es"
   },
   "FI": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "FI",
     "text": "Finnish",
+    "charset": "Cp1252",
+    "name": "FI",
     "tr_code": "fi"
   },
   "FR": {
-    "VERSION": "1",
-    "azerty": "true",
-    "charset": "Cp1252",
-    "id": "FR",
     "text": "Francais",
+    "charset": "Cp1252",
+    "name": "FR",
+    "azerty": "true",
     "tr_code": "fr"
   },
   "HU": {
-    "VERSION": "1",
-    "charset": "Cp1250",
-    "id": "HU",
     "text": "Hungarian",
+    "charset": "Cp1250",
+    "name": "HU",
     "tr_code": "hu"
   },
   "ID": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "ID",
     "text": "Indonesia",
+    "charset": "UTF-8",
+    "name": "ID",
     "tr_code": "id"
   },
   "IT": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "IT",
     "text": "Italiano",
+    "charset": "Cp1252",
+    "name": "IT",
     "tr_code": "it"
   },
   "JP": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "JP",
     "text": "Japanese",
+    "charset": "UTF-8",
+    "name": "JP",
     "tr_code": "ja"
   },
   "KO": {
-    "VERSION": "1",
-    "charset": "UTF-16",
-    "id": "KO",
     "text": "Korean",
+    "charset": "UTF-16",
+    "name": "KO",
     "tr_code": "ko"
   },
   "NL": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "NL",
     "text": "Nederlands",
+    "charset": "Cp1252",
+    "name": "NL",
     "tr_code": "nl"
   },
   "NO": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "NO",
     "text": "Norsk",
+    "charset": "Cp1252",
+    "name": "NO",
     "tr_code": "no"
   },
   "PH": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "PH",
     "text": "Tagalog",
+    "charset": "UTF-8",
+    "name": "PH",
     "tr_code": "tl"
   },
   "PL": {
-    "VERSION": "1",
-    "charset": "Cp1250",
-    "id": "PL",
     "text": "Polish",
+    "charset": "Cp1250",
+    "name": "PL",
     "tr_code": "pl"
   },
   "PT": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "PT",
     "text": "Portuguese",
+    "charset": "Cp1252",
+    "name": "PT",
     "tr_code": "pt"
   },
   "PTBR": {
-    "VERSION": "1",
-    "charset": "Cp1252",
-    "id": "PTBR",
     "text": "Brazilian Portuguese",
+    "charset": "Cp1252",
+    "name": "PTBR",
     "tr_code": "pt"
   },
   "RO": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "RO",
     "text": "Romanian",
+    "charset": "UTF-8",
+    "name": "RO",
     "tr_code": "ro"
   },
   "RU": {
-    "VERSION": "1",
-    "charset": "Cp1251",
-    "id": "RU",
     "text": "Russian",
+    "charset": "Cp1251",
+    "name": "RU",
     "tr_code": "ru"
   },
   "TH": {
-    "VERSION": "1",
-    "charset": "UTF-8",
-    "id": "TH",
     "text": "Thai",
+    "charset": "UTF-8",
+    "name": "TH",
     "tr_code": "th"
   },
   "TR": {
-    "VERSION": "1",
-    "charset": "Cp1254",
-    "id": "TR",
     "text": "Turkish",
+    "charset": "Cp1254",
+    "name": "TR",
     "tr_code": "tr"
   },
   "UA": {
-    "VERSION": "1",
-    "charset": "Cp1251",
-    "id": "UA",
     "text": "Ukrainian",
+    "charset": "Cp1251",
+    "name": "UA",
     "tr_code": "uk"
   }
 }

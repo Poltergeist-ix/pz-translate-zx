@@ -3,7 +3,10 @@ Generate language information for translations
 """
 
 import os
+import pathlib
 import json
+from configparser import ConfigParser
+from deep_translator import GoogleTranslator
 
 Aliases = {
     'AR': ['spanish'], #ar
@@ -35,65 +38,77 @@ Aliases = {
     'UA': ['ukrainian'],
 }
 
-def getTranslateDir():
-    from configparser import ConfigParser
+def get_translate_path():
+    """
+    return the path of the Translate folder
+    """
     config = ConfigParser()
-    config.read("config.ini")
-    return config["Directories"]["PZTranslateDir"]
+    config.read(pathlib.Path(__file__).resolve().parent / "config.ini")
+    return pathlib.Path(config["Directories"]["PZTranslateDir"])
 
-def getTranslateCodes(name):
+def get_translate_codes(name):
+    """
+    return the codes for translations
+    """
     if name == "google":
-        from deep_translator import GoogleTranslator
         return GoogleTranslator().get_supported_languages(True)
 
-# uses scriptblock - need improvement
-def readLanguageFile(filePath: str):
-    try:
-        with open(filePath,"r") as f:
-            d = {}
-            for line in f:
-                for it in line.split(","):
-                    if "=" in it:
-                        key, value = it.split("=",1)
-                        key = key.strip()
-                        value = value.strip()
-                        d[key] = value
-            # print(d)
-            if all(x in d for x in ["text", "charset"]) and d["VERSION"] == "1":
-                return d
-            else:
-                return None
-    except:
-        return None
+def parse_language_file(fpath: pathlib.Path):
+    """
+    LanguageFile instance uses ScriptParser to read the file and sets the values to LanguageFileData object
+    """
+    with open(fpath,"r",encoding="UTF-8") as f:
+        d = {}
+        for line in f:
+            for it in line.split(","):
+                if "=" in it:
+                    key, value = it.split("=",1)
+                    key = key.strip()
+                    value = value.strip()
+                    d[key] = value
+    return d
 
 # FIXME: Catalan has encoding issues - switch to Cp1252?
-def generateLanguagesInfo():
-    translateDir = getTranslateDir()
-    translateCodes = getTranslateCodes("google")
-    all = {}
-    with os.scandir(translateDir) as tDir:
-        for each in tDir:
+def generate_info():
+    """
+    loop from all directories and gather information about the languages
+    """
+    translate_path = get_translate_path()
+    translate_codes = get_translate_codes("google")
+    info = {}
+    with os.scandir(translate_path) as dir_entries:
+        for each in dir_entries:
             if each.is_dir():
-                d = readLanguageFile(os.path.join(translateDir,each.name,"language.txt"))
-                if not d:
+                lpath = translate_path.joinpath(each.name,"language.txt")
+                if not lpath.is_file:
                     continue
-                d["id"] = each.name
-                d["tr_code"] = next((translateCodes[x] for x in Aliases[each.name] if x in translateCodes) , None)
-                if not d["tr_code"]:
-                    print("no tr_code found for",each.name,d["text"])
-                    d["tr_code"] = "en"
-                all[each.name] = dict(sorted(d.items()))
-                # print("'"+ each.name + "': ['" + d["text"].lower() + "'],")
-                # print("| " + each.name + " | " + d["text"] + " | " + d["charset"] + " |")
-    return all
+                d = parse_language_file(lpath)
+                if not (all(x in d for x in ["text", "charset", "VERSION"]) and d["VERSION"] == "1"):
+                    continue
+                data = {}
+                data["text"] = d["text"]
+                data["charset"] = d["charset"]
+                data["name"] = each.name
+                for k in ["base","azerty"]:
+                    if k in d:
+                        data[k] = d[k]
+                data["tr_code"] = next((translate_codes[x] for x in Aliases[each.name] if x in translate_codes) , None)
+                if data["tr_code"] is None:
+                    print("no tr_code found for",each.name,data["text"])
+                    data["tr_code"] = "en"
+                info[each.name] = data
 
-def getLanguages(generate: bool = False) -> dict[str, dict]:
-    LanguagesPath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LanguagesInfo.json")
-    if generate or not os.path.isfile(LanguagesPath):
-        d = generateLanguagesInfo()
-        with open(LanguagesPath,"w",encoding="utf-8") as f:
+    return info
+
+def get_languages_info(generate: bool = False) -> dict[str, dict]:
+    """
+    returns the languages information
+    """
+    ipath = pathlib.Path(__file__).parent / "LanguagesInfo.json"
+    if generate or not ipath.is_file():
+        d = generate_info()
+        with open(ipath,"w",encoding="utf-8") as f:
             json.dump(d,f,indent=2)
         return d
-    else:
-        with open(LanguagesPath,"r",encoding="utf-8") as f:
-            return json.load(f)
+    with open(ipath,"r",encoding="utf-8") as f:
+        return json.load(f)
