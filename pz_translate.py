@@ -7,7 +7,6 @@ Author: Poltergeist
 
 """
 
-import os
 import sys
 import pathlib
 from shutil import copyfile
@@ -40,27 +39,27 @@ class Translator:
     Translator for a mod's 'Translate' folder 
     """
 
-    def __init__(self, translate_dir: str = None, source: str = "EN", use_config: bool = True,
+    def __init__(self, _path: pathlib.Path = None, source: str = "EN", use_config: bool = True,
                  add_gitattributes: bool = True):
-        self.path = pathlib.Path(translate_dir) if translate_dir else None
+        self.path = _path
+        self.import_path: pathlib.Path = None
+        self.source_lang = PZ_LANGUAGES[source]
         self.languages: list[dict] = []
         self.files: list[str]
         self.pause_on_gitattributes: bool = False
-        if use_config:
-            self.parse_config()
-        else:
-            self.source_lang = PZ_LANGUAGES[source]
-        if add_gitattributes:
-            self.check_gitattributes()
         self.warnings = 0
         self.translator = GoogleTranslator(self.source_lang["tr_code"])
+        if use_config:
+            self.parse_config()
+        if add_gitattributes:
+            self.check_gitattributes()
 
     def parse_config(self):
         """
         Read the config
         """
         config = ConfigParser()
-        config.read(os.path.join(os.path.dirname(__file__),"config.ini"))
+        config.read(pathlib.Path(__file__).resolve().parent / "config.ini")
 
         if self.path is None:
             self.path = pathlib.Path(config["Directories"][config["Translate"]["target"]])
@@ -99,6 +98,14 @@ class Translator:
             return self.path.joinpath(lang_id, file + "_" + lang_id + ".txt")
         return self.path.joinpath(lang_id)
 
+    def get_import_path(self, lang_id: str, file: str) -> pathlib.Path | None:
+        """
+        returns the path of the import file or None if there is no import path
+        """
+        if self.import_path:
+            return self.import_path.joinpath(lang_id, file + "_" + lang_id + ".txt")
+        return None
+
     def init_languages(self, translate: list | dict, create: set):
         """
         return final list of languages to translate
@@ -110,97 +117,76 @@ class Translator:
                 self.get_path(lang).mkdir()
                 self.languages.append(PZ_LANGUAGES[lang])
 
-    def parse_source(self, file: str):
+    def parse_translation_file(self, lang: dict, texts: dict, file_path: str,
+                               create_template: bool = False) -> str | None:
         """
-        parse the source file
+        parse the translation file
         """
-        try:
-            with open(self.get_path(self.source_lang["id"],file),'r',encoding=self.source_lang["charset"]) as f:
-                lines = []
-                tdict = {}
-                is_valid = False
-                key = ""
-                text = ""
 
-                lines += f.readline().replace("{","{{").replace(self.source_lang["id"],"{language}")
+        with open(file_path,'r',encoding=lang["charset"]) as f:
+            if create_template:
+                template = []
 
-                for line in f:
-                    line = line.replace("{","{{")
-                    line = line.replace("}","}}")
-                    if "=" in line and "\"" in line:
-                        index1 = line.index("=")
-                        index2 = line.index("\"",index1+1)
-                        index3 = line.rindex("\"")
-                        if index2 == index3:
-                            self.warn("Missing one \" for: " + line)
-                            is_valid = False
-                            lines += line
-                        else:
-                            is_valid = True
-                            key = line[:index1].strip().replace(".","-")
-                            text = line[index2+1:index3]
-                            lines += line[:index2+1], "{", key, "}", line[index3:]
-                            tdict[key] = text
-                    elif "--" in line or not line.strip() or line.strip().endswith("..") and not is_valid:
-                        is_valid = False
-                        lines += line
-                    else:
-                        is_valid = True
-                        lines += line
-
-                    if not is_valid or not line.strip().endswith(".."):
-                        is_valid = False
-                        key = ""
-                        text = ""
-
-                return "".join(lines), tdict
-        except FileNotFoundError:
-            return None, None
-
-    def import_translations(self, lang: dict, tr_texts: dict, file_path: pathlib.Path):
-        """
-        parse translation file
-        """
-        with open(file_path,'r',encoding=lang["charset"],errors="replace") as f:
             is_valid = False
             key = ""
             text = ""
 
-            f.readline()
+            line = f.readline()
+            if create_template:
+                template += line.replace("{","{{").replace(self.source_lang["id"],"{language}")
 
             for line in f:
+                line = line.replace("{","{{")
+                line = line.replace("}","}}")
                 if "=" in line and "\"" in line:
                     index1 = line.index("=")
                     index2 = line.index("\"",index1+1)
                     index3 = line.rindex("\"")
-                    key = line[:index1].strip().replace(".","-")
-                    text = line[index2+1:index3]
-                    tr_texts[key] = text
-                    is_valid = True
+                    if index2 == index3:
+                        self.warn("Missing one \" for: " + line)
+                        is_valid = False
+                        if create_template:
+                            template += line
+                    else:
+                        is_valid = True
+                        key = line[:index1].strip().replace(".","-")
+                        text = line[index2+1:index3]
+                        texts[key] = text
+                        if create_template:
+                            template += line[:index2+1], "{", key, "}", line[index3:]
                 elif "--" in line or not line.strip() or line.strip().endswith("..") and not is_valid:
                     is_valid = False
+                    if create_template:
+                        template += line
                 else:
                     is_valid = True
+                    if create_template:
+                        template += line
 
                 if not is_valid or not line.strip().endswith(".."):
                     is_valid = False
                     key = ""
                     text = ""
 
+            if create_template:
+                return "".join(template)
+            return None
+
     def translate_single(self, tlang: dict, otexts: dict, trtexts: dict):
         """
-        translate texts using translators 'translate' function
+        translate missing texts using translators 'translate' function
         """
-        untranslated = len(otexts) + 1 - len(trtexts)
-        if untranslated > 0:
-            print(" - Untranslated texts size: ",untranslated)
-        for key, value in otexts.items():
-            if key not in trtexts:
-                trtexts[key] = vars_demod(self.translator.translate(vars_mod(value)))
+
+        untranslated = [x for x in otexts if x not in trtexts]
+        if untranslated:
+            print(f" - Translating number of texts: {len(untranslated)}")
+            self.translator.target = tlang["tr_code"]
+            for key in untranslated:
+                trtexts[key] = vars_demod(self.translator.translate(vars_mod(otexts[key])))
 
     def translate_batch(self, trlang: dict, or_texts: dict, tr_texts: dict):
         """
-        translate texts using translators 'batch translate' function
+        translate missing texts using translators 'batch translate' function
         """
         keys, values = [],[]
         for key in or_texts:
@@ -209,6 +195,7 @@ class Translator:
                 values.append(vars_mod(or_texts[key]))
         if values:
             print(" - Untranslated texts size: ",len(values))
+            self.translator.target = trlang["tr_code"]
             translations = self.translator.translate_batch(values)
             for i,key in enumerate(keys):
                 tr_texts[key] = vars_demod(translations[i])
@@ -217,14 +204,20 @@ class Translator:
         """
         return dictionary with translation texts
         """
-        tr_texts = {"language":tr_lang["id"]}
+
+        tr_map = {"language":tr_lang["id"]}
         fpath = self.get_path(tr_lang["id"],file)
         if fpath.is_file():
-            self.import_translations(tr_lang,tr_texts,fpath)
-        self.translate_single(tr_lang,source_texts,tr_texts)
-        return tr_texts
+            self.parse_translation_file(tr_lang,tr_map,fpath)
+        # if there is an import source then parse them on top of current translations
+        fpath = self.get_import_path(tr_lang["id"],file)
+        if fpath and fpath.is_file():
+            self.parse_translation_file(tr_lang,tr_map,fpath)
+        self.translate_single(tr_lang,source_texts,tr_map)
 
-    def write_translation(self,lang: dict, file: str, text: str):
+        return tr_map
+
+    def write_translation(self, lang: dict, file: str, text: str):
         """
         write the translation file
         """
@@ -241,15 +234,19 @@ class Translator:
         translate class instance
         """
         for file in self.files:
-            template_text, source_texts = self.parse_source(file)
+            source_file_path = self.get_path(self.source_lang["id"],file)
+            if source_file_path.is_file():
+                source_map = {}
+                template_text = self.parse_translation_file(self.source_lang,source_map,source_file_path,True)
+            else:
+                source_map = None
             for lang in self.languages:
-                if source_texts:
+                if source_map:
                     print(f"Begin Translation Check for: {file}, {lang['id']}, {lang['text']}")
-                    self.translator.target = lang["tr_code"]
-                    self.write_translation(lang,file,template_text.format_map(self.get_translations(source_texts,lang,file)))
+                    self.write_translation(lang,file,template_text.format_map(self.get_translations(source_map,lang,file)))
                 else:
                     self.get_path(lang["id"],file).unlink(missing_ok=True)
-        print(f"Translation Warnings: {self.warnings}")
+        print(f"Translation warnings total: {self.warnings}")
 
     def translate(self, languages: list | dict, files: list, languages_create: set[str]):
         """
@@ -298,29 +295,35 @@ class Translator:
                 input("Added .gitattributes file. Press Enter to continue.\n")
 
     def warn(self, message: str):
-        """simple warn message"""
+        """print warn message"""
         self.warnings += 1
         print(" - " + message)
 
-def translate_project(project_dir,args):
-    "translate project"
-    with open(os.path.join(project_dir,"project.json"),"r",encoding="utf-8") as f:
+def translate_project(project_path):
+    """
+    translate project
+    """
+
+    with open(project_path.joinpath("project.json"),"r",encoding="utf-8") as f:
         project = json.load(f)
     for mod_id in project["mods"]:
         if mod_id in project["workshop"]["excludes"]:
             continue
-        modpath = pathlib.Path(project_dir,mod_id,"media","lua","shared","Translate")
+        modpath = project_path.joinpath(mod_id,"media","lua","shared","Translate")
         if not modpath.is_dir():
             print("Invalid translation dir:",modpath.resolve())
             continue
-        o = Translator(modpath.resolve(),add_gitattributes=True)
+        o = Translator(modpath,add_gitattributes=True)
         o.translate_main()
 
-def translate_mod(mod_dir,args):
-    "translate mod"
-    translate_path = pathlib.Path(mod_dir,"media","lua","shared","Translate")
+def translate_mod(mod_path):
+    """
+    translate mod
+    """
+
+    translate_path = mod_path.joinpath("media","lua","shared","Translate")
     if translate_path.is_dir():
-        o = Translator(translate_path.resolve(),add_gitattributes=True)
+        o = Translator(translate_path,add_gitattributes=True)
         o.translate_main()
     else:
         print("Invalid translation dir:",translate_path.resolve())
@@ -330,16 +333,18 @@ if __name__ == '__main__':
         if len(sys.argv) == 1:
             print("* Translating from config file *")
             Translator().translate_main()
-        elif not os.path.isdir(sys.argv[1]):
-            print("Directory does not exist:",sys.argv[1])
-        elif os.path.isfile(os.path.join(sys.argv[1],"project.json")):
-            print("* Translating project *")
-            translate_project(sys.argv[1],sys.argv[2:])
-        elif os.path.isfile(os.path.join(sys.argv[1],"mod.info")):
-            print("* Translating mod *")
-            translate_mod(sys.argv[1],sys.argv[2:])
         else:
-            print("* Translating directory *")
-            Translator(translate_dir=sys.argv[1]).translate_main()
+            _path = pathlib.Path(sys.argv[1])
+            if not _path.is_dir():
+                print("Directory does not exist:",_path.resolve())
+            elif _path.joinpath("project.json").is_file():
+                print("* Translating project *")
+                translate_project(_path)
+            elif _path.joinpath("mod.info").is_file():
+                print("* Translating mod *")
+                translate_mod(_path)
+            else:
+                print("* Translating directory *")
+                Translator(_path).translate_main()
     except KeyboardInterrupt:
         print("Process manually terminated")
