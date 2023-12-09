@@ -68,7 +68,6 @@ def parse_language_file(fpath: pathlib.Path):
                     d[key] = value
     return d
 
-# FIXME: Catalan has encoding issues - switch to Cp1252?
 def generate_info():
     """
     loop from all directories and gather information about the languages

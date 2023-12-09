@@ -39,30 +39,15 @@ class Translator:
     Translator for a mod's 'Translate' folder 
     """
 
-    def __init__(self, _path: pathlib.Path = None, source: str = "EN", use_config: bool = True,
-                 add_gitattributes: bool = True):
-        self.path = _path
-        self.import_path: pathlib.Path = None
-        self.source_lang = PZ_LANGUAGES[source]
-        self.languages: list[dict] = []
-        self.files: list[str]
-        self.pause_on_gitattributes: bool = False
-        self.warnings = 0
-        self.translator = GoogleTranslator(self.source_lang["tr_code"])
-        if use_config:
-            self.parse_config()
-        if add_gitattributes:
-            self.check_gitattributes()
-
-    def parse_config(self):
-        """
-        Read the config
-        """
+    def __init__(self, _path: pathlib.Path = None):
         config = ConfigParser()
         config.read(pathlib.Path(__file__).resolve().parent / "config.ini")
 
-        if self.path is None:
+        if _path is None:
             self.path = pathlib.Path(config["Directories"][config["Translate"]["target"]])
+        else:
+            self.path = _path
+
         source = config["Translate"]["source"]
         source_path = self.path / source
 
@@ -86,9 +71,13 @@ class Translator:
             lang_create = {x for x in [x.strip() for x in config["Translate"]["languagesCreate"].split(",")] if x in lang_translate}
         else:
             lang_create = lang_translate
-        self.init_languages(lang_translate,lang_create)
-
-        self.pause_on_gitattributes = config.getboolean("DEFAULT","pause_on_gitattributes",fallback=True)
+        self.languages: list[dict] = self.get_valid_languages(lang_translate,lang_create)
+        import_dir = config.get("Directories","Import", fallback=None)
+        self.import_path: pathlib.Path = pathlib.Path(import_dir) if import_dir else None
+        self.create_gitattributes = config.getboolean("DEFAULT","create_gitattributes")
+        self.pause_on_gitattributes = config.getboolean("DEFAULT","pause_on_gitattributes")
+        self.warnings = 0
+        self.translator = GoogleTranslator(self.source_lang["tr_code"])
 
     def get_path(self, lang_id: str, file: str = None) -> pathlib.Path:
         """
@@ -106,16 +95,19 @@ class Translator:
             return self.import_path.joinpath(lang_id, file + "_" + lang_id + ".txt")
         return None
 
-    def init_languages(self, translate: list | dict, create: set):
+    def get_valid_languages(self, translate: list | dict, create: set | list):
         """
         return final list of languages to translate
         """
+        languages = []
         for lang in translate:
             if self.path.joinpath(lang).is_dir():
-                self.languages.append(PZ_LANGUAGES[lang])
+                languages.append(PZ_LANGUAGES[lang])
             elif lang in create:
                 self.get_path(lang).mkdir()
-                self.languages.append(PZ_LANGUAGES[lang])
+                languages.append(PZ_LANGUAGES[lang])
+
+        return languages
 
     def parse_translation_file(self, lang: dict, texts: dict, file_path: str,
                                create_template: bool = False) -> str | None:
@@ -251,7 +243,7 @@ class Translator:
         translate without config file
         """
         self.files = files
-        self.init_languages(languages,languages_create)
+        self.languages = self.get_valid_languages(languages,languages_create)
         self.translate_main()
 
     def reencode_translations(self, read: dict, languages: list = PZ_LANGUAGES, files: list = FILE_LIST):
@@ -311,7 +303,7 @@ def translate_project(project_path):
         if not modpath.is_dir():
             print("Invalid translation dir:",modpath.resolve())
             continue
-        o = Translator(modpath,add_gitattributes=True)
+        o = Translator(modpath)
         o.translate_main()
 
 def translate_mod(mod_path):
@@ -321,7 +313,7 @@ def translate_mod(mod_path):
 
     translate_path = mod_path.joinpath("media","lua","shared","Translate")
     if translate_path.is_dir():
-        o = Translator(translate_path,add_gitattributes=True)
+        o = Translator(translate_path)
         o.translate_main()
     else:
         print("Invalid translation dir:",translate_path.resolve())
