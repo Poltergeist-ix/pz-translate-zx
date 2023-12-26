@@ -52,7 +52,8 @@ class Translator:
         source_path = self.path / source
 
         assert source_path.is_dir(), "Missing source directory: " + source_path.resolve()
-
+        
+        self.warnings = 0
         self.source_lang = PZ_LANGUAGES[source]
         if "files" in config["Translate"]:
             self.files = [x for x in [x.strip() for x in config["Translate"]["files"].split(",")] if x in FILE_LIST]
@@ -74,9 +75,8 @@ class Translator:
         self.languages: list[dict] = self.get_valid_languages(lang_translate,lang_create)
         import_dir = config.get("Directories","Import", fallback=None)
         self.import_path: pathlib.Path = pathlib.Path(import_dir) if import_dir else None
-        self.create_gitattributes = config.getboolean("DEFAULT","create_gitattributes")
-        self.pause_on_gitattributes = config.getboolean("DEFAULT","pause_on_gitattributes")
-        self.warnings = 0
+        if config.getboolean("DEFAULT","create_gitattributes"):
+            self.check_gitattributes(config.getboolean("DEFAULT","pause_on_gitattributes"))
         self.translator = GoogleTranslator(self.source_lang["tr_code"])
 
     def get_path(self, lang_id: str, file: str = None) -> pathlib.Path:
@@ -273,14 +273,14 @@ class Translator:
             self.files
         )
 
-    def check_gitattributes(self):
+    def check_gitattributes(self,pause:bool):
         """
         add gitattributes file if it doesn't exist
         """
         fpath = self.path / ".gitattributes"
         if not fpath.is_file():
             copyfile(pathlib.Path(__file__).resolve().parent / ".gitattributes-template.txt",fpath.resolve(),follow_symlinks=False)
-            if self.pause_on_gitattributes:
+            if pause:
                 self.reencode_initial()
                 input("Added .gitattributes file. Press Enter to continue.\n")
 
